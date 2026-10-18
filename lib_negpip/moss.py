@@ -192,9 +192,9 @@ def _tokenize_line_negpip(engine, line: str, emphasis_name: str) -> tuple[list[i
         parsed = parsing.parse_prompt_attention(line, emphasis_name)
         if emphasis_name == "Ignore":
             parsed = [(t, 1.0) for t, _ in parsed]
-        # MOSS-Image has no chunking; the parser marks BREAK with -1, keep it as
-        # the plain word the extension would see
-        parsed = [(t, 1.0 if (t == "BREAK" and w == -1.0) else w) for t, w in parsed]
+        # MOSS-Image has no chunking; the parser marks BREAK with -1 and eats the
+        # whitespace around it, restore the plain word the extension would see
+        parsed = [(" BREAK ", 1.0) if (t == "BREAK" and w == -1.0) else (t, w) for t, w in parsed]
 
     if all(w == 1.0 for _, w in parsed):
         tokens = engine.token_ids(line)
@@ -209,6 +209,13 @@ def _tokenize_line_negpip(engine, line: str, emphasis_name: str) -> tuple[list[i
     # token_ids() drops the whitespace around the whole prompt
     texts[0] = texts[0].lstrip()
     texts[-1] = texts[-1].rstrip()
+    # Qwen's BPE merges a leading space into the word ("Ġred"); move the
+    # whitespace before a segment into it so that the segment tokenizes the
+    # same way as inside the whole prompt and the weight covers the whole token
+    for i in range(len(texts) - 1):
+        stripped = texts[i].rstrip()
+        texts[i + 1] = texts[i][len(stripped):] + texts[i + 1]
+        texts[i] = stripped
 
     tokens = list(hf_tokenizer.encode(prefix, add_special_tokens=False))
     multipliers = [1.0] * len(tokens)
