@@ -39,9 +39,9 @@ def is_moss_image(model) -> bool:
 
 def any_weighted(model, p) -> bool:
     """
-    utils.any_negative / any_weighted, but ignoring layout prompts (one JSON
-    object, e.g. written by Regional Boxes): their brackets are data, and such a
-    line is always encoded verbatim, so it must not activate the extension
+    utils.any_negative / any_weighted, but looking only at the captions of a
+    layout prompt (one JSON object, e.g. written by Regional Boxes): the brackets
+    of its boxes are data, not emphasis
     """
     engine = getattr(model, "text_engine_moss", None)
     lines = [
@@ -51,9 +51,17 @@ def any_weighted(model, p) -> bool:
         *(getattr(p, "hr_negative_prompts", None) or []),
     ]
     for line in lines:
-        if engine is not None and _is_layout(engine, line.strip()):
-            continue
-        if has_negative(line) or emphasis.uses_emphasis(line):
+        layout = _layout(engine, line.strip()) if engine is not None else None
+        if layout is not None:
+            texts = []
+            for start, end in _caption_spans(layout):
+                try:
+                    texts.append(json.loads(f'"{layout[start:end]}"'))
+                except ValueError:
+                    pass
+        else:
+            texts = [line]
+        if any(has_negative(t) or emphasis.uses_emphasis(t) for t in texts):
             return True
     return False
 
@@ -185,20 +193,109 @@ def _engine_module(engine):
     return sys.modules[type(engine).__module__]
 
 
-def _is_layout(engine, text: str) -> bool:
+def _layout(engine, text: str) -> Optional[str]:
     """
-    a MOSS-Image layout prompt is one JSON object; its brackets are data, not
-    emphasis, so such a line always goes through the extension's own tokenizer
+    the text of a MOSS-Image layout prompt (one JSON object, with the braces
+    restored as the extension does), or None when the line is not a layout
     """
     restore = getattr(_engine_module(engine), "restore_layout_json", None)
     if restore is not None:
         text = restore(text)
     if not text.startswith("{"):
-        return False
+        return None
     try:
-        return isinstance(json.loads(text), dict)
+        return text if isinstance(json.loads(text), dict) else None
     except ValueError:
-        return False
+        return None
+
+
+def _is_layout(engine, text: str) -> bool:
+    return _layout(engine, text) is not None
+
+
+_CAPTION_KEY = "caption"
+
+
+def _json_strings(text: str) -> list[tuple[int, int]]:
+    """(start, end) of every JSON string token in text, quotes included"""
+    spans = []
+    i, n = 0, len(text)
+    while i < n:
+        if text[i] == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            spans.append((i, min(j + 1, n)))
+            i = j + 1
+        else:
+            i += 1
+    return spans
+
+
+def _caption_spans(text: str) -> list[tuple[int, int]]:
+    """
+    (start, end) of the content of every string that is the value of a
+    "caption" key: the scene caption and the item captions carry the prompt
+    words, everything else in a layout (text to render, meta, boxes) is data
+    """
+    strings = _json_strings(text)
+    spans = []
+    for k in range(len(strings) - 1):
+        key_start, key_end = strings[k]
+        if text[key_start:key_end] != f'"{_CAPTION_KEY}"':
+            continue
+        between = text[key_end : strings[k + 1][0]]
+        if between.strip() != ":":
+            continue
+        value_start, value_end = strings[k + 1]
+        spans.append((value_start + 1, value_end - 1))
+    return spans
+
+
+def _escape(segment: str) -> str:
+    return json.dumps(segment, ensure_ascii=False)[1:-1]
+
+
+def _parse_attention(text: str, emphasis_name: str) -> list[tuple[str, float]]:
+    parsed = parsing.parse_prompt_attention(text, emphasis_name)
+    if emphasis_name == "Ignore":
+        parsed = [(t, 1.0) for t, _ in parsed]
+    # MOSS-Image has no chunking; the parser marks BREAK with -1 and eats the
+    # whitespace around it, restore the plain word the extension would see
+    return [(" BREAK ", 1.0) if (t == "BREAK" and w == -1.0) else (t, w) for t, w in parsed]
+
+
+def _parse_layout(layout: str, emphasis_name: str) -> list[tuple[str, float]]:
+    """
+    the layout as weighted segments: the structure verbatim, the captions parsed
+    for prompt weights (and re-escaped where a weight applies)
+    """
+    parsed = []
+    pos = 0
+    for start, end in _caption_spans(layout):
+        parsed.append((layout[pos:start], 1.0))
+        raw = layout[start:end]
+        try:
+            caption = json.loads(f'"{raw}"')
+        except ValueError:
+            parsed.append((raw, 1.0))
+            pos = end
+            continue
+        segments = _parse_attention(caption, emphasis_name)
+        if all(w == 1.0 for _, w in segments):
+            parsed.append((raw, 1.0))
+        else:
+            parsed.extend((_escape(t), w) for t, w in segments)
+        pos = end
+    parsed.append((layout[pos:], 1.0))
+    return parsed
+
+
+def _parse_line(engine, line: str, emphasis_name: str) -> list[tuple[str, float]]:
+    layout = _layout(engine, line.strip())
+    if layout is not None:
+        return _parse_layout(layout, emphasis_name)
+    return _parse_attention(line, emphasis_name)
 
 
 def _tokenize_line_negpip(engine, line: str, emphasis_name: str) -> tuple[list[int], list[float]]:
@@ -206,17 +303,7 @@ def _tokenize_line_negpip(engine, line: str, emphasis_name: str) -> tuple[list[i
     tokenize like MossTextEngine.token_ids (chat template once around the whole
     prompt), with the prompt weights attached to the tokens of their segments
     """
-    text = line.strip()
-
-    if _is_layout(engine, text):
-        parsed = [(text, 1.0)]
-    else:
-        parsed = parsing.parse_prompt_attention(line, emphasis_name)
-        if emphasis_name == "Ignore":
-            parsed = [(t, 1.0) for t, _ in parsed]
-        # MOSS-Image has no chunking; the parser marks BREAK with -1 and eats the
-        # whitespace around it, restore the plain word the extension would see
-        parsed = [(" BREAK ", 1.0) if (t == "BREAK" and w == -1.0) else (t, w) for t, w in parsed]
+    parsed = _parse_line(engine, line, emphasis_name)
 
     if all(w == 1.0 for _, w in parsed):
         tokens = engine.token_ids(line)
