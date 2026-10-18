@@ -111,14 +111,14 @@ class NegPiP(scripts.Script):
         if not IS_NEO:
             return None
 
-        with InputAccordion(False, label="NegPiP V-Scaling (Krea 2)") as v_scaling:
+        with InputAccordion(False, label="NegPiP V-Scaling") as v_scaling:
             v_strength = gr.Slider(
                 minimum=0.0,
                 maximum=2.0,
                 value=1.0,
                 step=0.05,
                 label="Strength",
-                info="Scales the attention values (V) of weighted tokens: sign(w) * |w| ** Strength",
+                info="Krea 2 / MOSS-Image only. Scales the attention values (V) of weighted tokens: sign(w) * |w| ** Strength",
             )
 
         self.infotext_fields = [
