@@ -86,10 +86,12 @@ a cute cat sitting on a sofa in a living room, a red apple on the table
 
 <table>
     <tr>
+        <th>This extension <b>disabled</b></th>
         <th>V-Scaling <b>off</b></th>
         <th>V-Scaling <b>on</b> (Strength 1.0)</th>
     </tr>
     <tr>
+        <td><img src="./img/moss-weights-ignored.webp" width=256></td>
         <td><img src="./img/moss-vscaling-off.webp" width=256></td>
         <td><img src="./img/moss-vscaling-on.webp" width=256></td>
     </tr>
@@ -98,6 +100,8 @@ a cute cat sitting on a sofa in a living room, a red apple on the table
 ```
 a cute cat sitting on a sofa in a living room, red theme, (blue theme:2.0)
 ```
+
+With this extension disabled, the MOSS-Image extension receives `(blue theme:2.0)` as plain text and the room comes out entirely red. With NegPiP-style weighting, blue gets a visible push; with V-Scaling on, blue wins.
 
 ### Krea 2
 
