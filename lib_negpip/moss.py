@@ -23,6 +23,7 @@ from backend.args import dynamic_args
 from backend.text_processing import emphasis, parsing
 from lib_negpip.anima import _hook_compile_conditions
 from lib_negpip.krea import _V_SCALING
+from lib_negpip.utils import has_negative
 from modules import shared
 
 _PATCHED_MODEL = None
@@ -34,6 +35,27 @@ _TRANSFORMER_API = ("rotate", "head_norm", "situ", "kernels")
 
 def is_moss_image(model) -> bool:
     return bool(getattr(model, "is_moss_image", False)) or type(model).__name__ == "MossImageEngine"
+
+
+def any_weighted(model, p) -> bool:
+    """
+    utils.any_negative / any_weighted, but ignoring layout prompts (one JSON
+    object, e.g. written by Regional Boxes): their brackets are data, and such a
+    line is always encoded verbatim, so it must not activate the extension
+    """
+    engine = getattr(model, "text_engine_moss", None)
+    lines = [
+        *p.prompts,
+        *p.negative_prompts,
+        *(getattr(p, "hr_prompts", None) or []),
+        *(getattr(p, "hr_negative_prompts", None) or []),
+    ]
+    for line in lines:
+        if engine is not None and _is_layout(engine, line.strip()):
+            continue
+        if has_negative(line) or emphasis.uses_emphasis(line):
+            return True
+    return False
 
 
 def patch_moss_negpip(cls: "NegPiP", *, unpatch=False) -> bool:

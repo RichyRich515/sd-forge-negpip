@@ -10,6 +10,7 @@ from lib_negpip import IS_NEO, INCOMPATIBLE_EXTENSIONS
 from lib_negpip import krea
 from lib_negpip.anima import patch_anima_negpip
 from lib_negpip.krea import patch_krea2_negpip
+from lib_negpip import moss
 from lib_negpip.moss import is_moss_image, patch_moss_negpip
 from lib_negpip.sd import patch_sd_negpip
 from lib_negpip.utils import (
@@ -145,7 +146,10 @@ class NegPiP(scripts.Script):
 
             if self.is_anima:
                 active = any_negative(p)
-            elif self.is_krea2 or self.is_moss:
+            elif self.is_moss:
+                # as for Krea 2, but a layout prompt (JSON) never counts as weighted
+                active = moss.any_weighted(p.sd_model, p)
+            elif self.is_krea2:
                 # the weight magnitudes only apply correctly while patched,
                 # so also activate on positive weights
                 active = any_negative(p) or any_weighted(p)
