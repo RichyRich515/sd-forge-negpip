@@ -1,8 +1,8 @@
-# Experimental Krea 2 NegPiP / Prompt Weighting for Forge Neo
+# Experimental Krea 2 / MOSS-Image NegPiP / Prompt Weighting for Forge Neo
 
-A personal, AI-assisted fork that experiments with NegPiP and prompt weighting for Krea 2 (Krea2) in Forge Neo. It may help when prompt weights such as `(word:1.5)` or `(word:-1.0)` have little or no visible effect.
+A personal, AI-assisted fork that experiments with NegPiP and prompt weighting for Krea 2 (Krea2) and MOSS-Image in Forge Neo. It may help when prompt weights such as `(word:1.5)` or `(word:-1.0)` have little or no visible effect.
 
-This fork adds experimental Krea 2 support to the [original sd-forge-negpip](https://github.com/Haoming02/sd-forge-negpip). It also retains NegPiP support for **SD1, SDXL, and Anima**.
+This fork adds experimental Krea 2 support to the [original sd-forge-negpip](https://github.com/Haoming02/sd-forge-negpip). It also retains NegPiP support for **SD1, SDXL, and Anima**. This `neo-moss` branch additionally supports MOSS-Image through the [moss-image-forge-neo](https://github.com/eduardoabreu81/moss-image-forge-neo) extension; see [MOSS-Image Prompt Weighting](#moss-image-prompt-weighting).
 
 > [!NOTE]
 > This is not an official Krea 2 implementation. It was developed largely with AI assistance for my own use and is shared in case it helps someone with the same problem. If the [upstream extension](https://github.com/Haoming02/sd-forge-negpip) adds Krea 2 support, prefer that. The original [sd-webui-negpip](https://github.com/hako-mikan/sd-webui-negpip) also supports Krea 2 on Forge Neo since 2026-09-04. Prefer it if negative weights are all you need; this fork additionally applies positive weights such as `(word:1.5)`.
@@ -11,6 +11,7 @@ This fork adds experimental Krea 2 support to the [original sd-forge-negpip](htt
 
 - Negative prompt weights inside the positive prompt, even when using Krea 2 at CFG 1
 - Optional **V-Scaling**, which scales the attention values (V) of weighted tokens, for more noticeable positive and negative Krea 2 prompt weights
+- The same NegPiP weighting and V-Scaling for MOSS-Image, which otherwise ignores prompt weights entirely (`neo-moss` branch)
 - NegPiP behavior for SD1, SDXL, and Anima inherited from the original extension
 - Forge Neo integration for txt2img and img2img
 
@@ -24,13 +25,15 @@ https://github.com/flyfront/sd-forge-negpip
 
 No branch name is required: `neo-krea2-emphasis` is the default branch. Install the extension and restart the web UI.
 
+For MOSS-Image support, enter `neo-moss` as the branch name (or `git switch neo-moss` inside `extensions/sd-forge-negpip`). It contains everything in `neo-krea2-emphasis` plus the MOSS-Image files, and it requires the [moss-image-forge-neo](https://github.com/eduardoabreu81/moss-image-forge-neo) extension to be installed and enabled; without it, the branch behaves exactly like `neo-krea2-emphasis`.
+
 The former `neo-krea2` branch (NegPiP without V-Scaling) is frozen. This branch behaves the same way while the **NegPiP V-Scaling (Krea 2)** accordion is closed, and it receives all further fixes.
 
 ## How to Use
 
 - add `(foo:-1.0)` in the `positive prompt` to **remove** a concept
 - add `(bar:-1.0)` in the `negative prompt` to **enforce** a concept
-- For Krea 2, open **NegPiP V-Scaling (Krea 2)** and use a positive weight such as `(word:1.5)` for stronger emphasis
+- For Krea 2 and MOSS-Image, open **NegPiP V-Scaling (Krea 2)** and use a positive weight such as `(word:1.5)` for stronger emphasis (the accordion keeps its Krea 2 label so that existing `ui-config.json` settings stay valid; it applies to MOSS-Image as well)
 
 ## Krea 2 Prompt Weighting
 
@@ -45,7 +48,54 @@ The extension additionally offers an optional stronger mode: enable the **NegPiP
 > [!NOTE]
 > The Krea 2 support is based on [ComfyUI-krea2-negpip](https://github.com/blue-pen5805/ComfyUI-krea2-negpip). Following that implementation, weighted prompts are tokenized with the chat template applied once around the entire prompt, rather than once per weighted segment like the built-in emphasis does, and weight magnitudes are applied on the text encoder output by interpolating each weighted token between a neutral (empty) encoding and its actual encoding. Since Krea 2 uses normalization heavily, positive weights mostly affect the remaining directional difference and can look subtle, while negative weights additionally flip the token direction in attention values and tend to be much more noticeable. As V-Scaling rises from `0` to `1`, the encoder-side interpolation fades out continuously (large extrapolated weights can drift the token embedding away from its meaning), while the attention values (V) take over the magnitude using `sign(weight) × abs(weight) ** Strength`. V is the only tensor in the attention that Krea 2's normalization does not touch, so the token keeps its meaning while its contribution scales, and weights gain gradation on both sides, e.g. `(word:-2.0)` suppresses more strongly than `(word:-1.0)`. The scaled values are only read by the image tokens; the text tokens keep reading the original sign mask, so the text stream stays intact even at large weights (mirroring how NegPiP works in cross-attention models). Weighted prompts render differently from extension-off.
 
+## MOSS-Image Prompt Weighting
+
+[MOSS-Image](https://github.com/eduardoabreu81/moss-image-forge-neo) is not part of Forge Neo; the extension of that name adds the model, its Qwen3.5-9B text encoder, and its DiT. That extension passes the prompt to the text encoder verbatim, so prompt weights such as `(word:1.5)` or `(word:-1.0)` are not even parsed: the parentheses and the number reach the text encoder as text. The `neo-moss` branch of this extension hooks the MOSS-Image text engine and DiT the same way as for Krea 2:
+
+- Weighted prompts are parsed with Forge Neo's prompt parser (the `Emphasis` setting applies), tokenized with the MOSS-Image chat template once around the whole prompt, and the weighted segments are tokenized so that they produce the same tokens as the plain prompt
+- Weight magnitudes are applied through the extension's own ComfyUI-compatible text encoder, which interpolates each weighted token between the empty encoding and its own, i.e. the standard ComfyUI prompt weighting
+- Negative weights flip the sign of the token's attention values (V) in all 42 joint blocks of the DiT; the text-only refinement blocks are left alone. The optional **V-Scaling** works like on Krea 2: the image tokens read `sign(weight) × abs(weight) ** Strength`, the text tokens read the sign only
+- A prompt without effective weights is encoded exactly as the extension does on its own; a layout prompt (one JSON object) is always passed through untouched, since its brackets are data
+- `BREAK` is a plain word for MOSS-Image; while NegPiP is active it stays a plain word
+- The negative-prompt block skipping of the MOSS-Image extension (its `[MOSS-Image] Blocks skipped in the negative-prompt pass` setting) keeps working
+
+The branch was verified with the MOSS-Image SFT model (`moss_image_sft_int8_convrot`) on Forge Neo 2.30 with moss-image-forge-neo 0.1.1 (and offline against 0.1.2). If the extension is missing or its internals change, NegPiP stays off for MOSS-Image and prints `NegPiP Disabled (MOSS-Image: ...)` to the console; the extension and Forge Neo keep working.
+
 ## Examples
+
+### MOSS-Image
+
+Generated with `moss_image_sft_int8_convrot` on Forge Neo 2.30 (Euler, MOSS schedule, 20 steps, CFG 3.0, 1024×1024, same seed).
+
+<table>
+    <tr>
+        <th>Base</th>
+        <th><code>(a red apple:-1.0)</code><br>in <b>Positive</b> Prompt</th>
+    </tr>
+    <tr>
+        <td><img src="./img/moss-base.webp" width=256></td>
+        <td><img src="./img/moss-negpip.webp" width=256></td>
+    </tr>
+</table>
+
+```
+a cute cat sitting on a sofa in a living room, a red apple on the table
+```
+
+<table>
+    <tr>
+        <th>V-Scaling <b>off</b></th>
+        <th>V-Scaling <b>on</b> (Strength 1.0)</th>
+    </tr>
+    <tr>
+        <td><img src="./img/moss-vscaling-off.webp" width=256></td>
+        <td><img src="./img/moss-vscaling-on.webp" width=256></td>
+    </tr>
+</table>
+
+```
+a cute cat sitting on a sofa in a living room, red theme, (blue theme:2.0)
+```
 
 ### Krea 2
 
