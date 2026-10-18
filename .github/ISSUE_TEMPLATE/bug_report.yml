@@ -37,11 +37,24 @@ body:
       required: true
 
   - type: dropdown
+    id: branch
+    attributes:
+      label: Branch of this extension / この拡張のブランチ
+      description: Shown under Extensions → Installed. MOSS-Image works only on neo-moss. / Extensions → Installed に表示されます。MOSS-Image は neo-moss でのみ動作します。
+      options:
+        - neo-krea2-emphasis (default / 既定)
+        - neo-moss
+        - Not sure / 分からない
+    validations:
+      required: true
+
+  - type: dropdown
     id: model-type
     attributes:
       label: Model type / モデルの種類
       options:
         - Krea 2
+        - MOSS-Image
         - Anima
         - SDXL
         - SD 1.5
@@ -55,6 +68,13 @@ body:
       label: Checkpoint / チェックポイント
       description: File name of the model, e.g. INT8 ConvRot or fp8. / モデルのファイル名(INT8 ConvRot、fp8 など)。
 
+  - type: input
+    id: moss-extension-version
+    attributes:
+      label: moss-image-forge-neo version (MOSS-Image only) / moss-image-forge-neo のバージョン(MOSS-Image のときだけ)
+      description: Version or commit of the MOSS-Image extension, shown under Extensions → Installed. / MOSS-Image 拡張のバージョンまたはコミット(Extensions → Installed に表示)。
+      placeholder: 0.1.2
+
   - type: textarea
     id: prompt
     attributes:
@@ -66,7 +86,8 @@ body:
   - type: dropdown
     id: v-scaling
     attributes:
-      label: NegPiP V-Scaling (Krea 2)
+      label: NegPiP V-Scaling
+      description: The accordion on the txt2img / img2img page (Krea 2 / MOSS-Image). / txt2img・img2img ページのアコーディオン(Krea 2 / MOSS-Image)。
       options:
         - "Off"
         - "On"
