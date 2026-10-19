@@ -52,7 +52,7 @@ The extension additionally offers an optional stronger mode: enable the **NegPiP
 
 ## MOSS-Image Prompt Weighting
 
-[MOSS-Image](https://github.com/eduardoabreu81/moss-image-forge-neo) is not part of Forge Neo; the extension of that name adds the model, its Qwen3.5-9B text encoder, and its DiT. That extension passes the prompt to the text encoder verbatim, so prompt weights such as `(word:1.5)` or `(word:-1.0)` are not even parsed: the parentheses and the number reach the text encoder as text. The `neo-moss` branch of this extension hooks the MOSS-Image text engine and DiT the same way as for Krea 2:
+MOSS-Image comes to Forge Neo in two ways: the [moss-image-forge-neo](https://github.com/eduardoabreu81/moss-image-forge-neo) extension, and Forge Neo's own support ([Haoming02/sd-webui-forge-classic#1564](https://github.com/Haoming02/sd-webui-forge-classic/pull/1564), not merged at the time of writing). Both pass the prompt to the Qwen3.5-9B text encoder verbatim, so prompt weights such as `(word:1.5)` or `(word:-1.0)` are not even parsed: the parentheses and the number reach the text encoder as text. The `neo-moss` branch of this extension detects which implementation loaded the model and hooks its text engine and DiT the same way as for Krea 2; there is nothing to configure:
 
 - Weighted prompts are parsed with Forge Neo's prompt parser (the `Emphasis` setting applies), tokenized with the MOSS-Image chat template once around the whole prompt, and the weighted segments are tokenized so that they produce the same tokens as the plain prompt
 - Weight magnitudes are applied through the extension's own ComfyUI-compatible text encoder, which interpolates each weighted token between the empty encoding and its own, i.e. the standard ComfyUI prompt weighting
@@ -60,9 +60,9 @@ The extension additionally offers an optional stronger mode: enable the **NegPiP
 - A prompt without effective weights is encoded exactly as the extension does on its own
 - In a layout prompt (one JSON object, e.g. written by [Regional Boxes](https://github.com/eduardoabreu81/sd-regional-boxes-neo)), weights are read only inside the captions (the scene `caption` and each item's `caption`); the words to render (`text`), `meta` and the boxes are data and stay verbatim, so the brackets of a box never count as emphasis. A layout without weights in its captions is passed through untouched and does not activate the extension
 - `BREAK` is a plain word for MOSS-Image; while NegPiP is active it stays a plain word
-- The negative-prompt block skipping of the MOSS-Image extension (its `[MOSS-Image] Blocks skipped in the negative-prompt pass` setting) keeps working
+- The negative-prompt block skipping keeps working, both the extension's (`[MOSS-Image] Blocks skipped in the negative-prompt pass`) and Forge Neo's Skip Layer Guidance
 
-The branch was verified with the MOSS-Image SFT model (`moss_image_sft_int8_convrot`) on Forge Neo 2.30 with moss-image-forge-neo 0.1.1 (and offline against 0.1.2). If the extension is missing or its internals change, NegPiP stays off for MOSS-Image and prints `NegPiP Disabled (MOSS-Image: ...)` to the console; the extension and Forge Neo keep working.
+The extension path was verified with the MOSS-Image SFT model (`moss_image_sft_int8_convrot`) on Forge Neo 2.30 with moss-image-forge-neo 0.1.1 (and offline against 0.1.2). The Forge Neo path was verified offline against the #1564 branch (real text engine and DiT code, CPU), not yet with a generation. If neither implementation is recognized or its internals change, NegPiP stays off for MOSS-Image and prints `NegPiP Disabled (MOSS-Image: ...)` to the console; the model keeps working.
 
 ## Examples
 
