@@ -167,15 +167,23 @@ class _ExtensionBackend(_Backend):
         x, rope, mod, dtype = args[:4]
         options = kwargs.get("transformer_options") or (args[4] if len(args) > 4 else None) or {}
         transformer = _module_of(block)
+        kernels = transformer.kernels
+        # builds whose block forward runs comfy-kitchen's fused norm / RoPE / SiTU kernels expose them on the
+        # module; use them too, the masking below only touches v
+        fused = all(hasattr(kernels, n) for n in ("modulated_rms_norm", "norm_rope", "linear_situ")) and hasattr(transformer, "EPS")
 
         shift_a, scale_a, gate_a, shift_f, scale_f, gate_f = (m[:, None] for m in mod.unbind(1))
-        y = (block.norm1(x) * (1 + scale_a) + shift_a).to(dtype)
+        if fused:
+            y = kernels.modulated_rms_norm(block.norm1, x, scale_a, shift_a, transformer.EPS).to(dtype)
+        else:
+            y = (block.norm1(x) * (1 + scale_a) + shift_a).to(dtype)
         if block.fused_qkv:
             q, k, v = block.proj["qkv"](y).chunk(3, -1)
         else:
             q, k, v = block.proj["q"](y), block.proj["k"](y), block.proj["v"](y)
-        q = transformer.head_norm(block.q_norm, q, block.heads)
-        k = transformer.head_norm(block.k_norm, k, block.heads)
+        if not fused:
+            q = transformer.head_norm(block.q_norm, q, block.heads)
+            k = transformer.head_norm(block.k_norm, k, block.heads)
 
         m, imglen, image_mask, sign_mask = _text_masks(negpip_mask, v)
         # Text queries always read sign-masked values. When image queries need
@@ -186,8 +194,12 @@ class _ExtensionBackend(_Backend):
 
         heads = block.heads
         shape = (*q.shape[:2], heads, q.shape[-1] // heads)
-        q = transformer.rotate(q.reshape(shape), rope).transpose(1, 2).to(v.dtype)
-        k = transformer.rotate(k.reshape(shape), rope).transpose(1, 2).to(v.dtype)
+        if fused:
+            q, k = kernels.norm_rope(q.reshape(shape), k.reshape(shape), block.q_norm, block.k_norm, rope, transformer.EPS, transformer.rotate)
+            q, k = q.transpose(1, 2).to(v.dtype), k.transpose(1, 2).to(v.dtype)
+        else:
+            q = transformer.rotate(q.reshape(shape), rope).transpose(1, 2).to(v.dtype)
+            k = transformer.rotate(k.reshape(shape), rope).transpose(1, 2).to(v.dtype)
         v = v.reshape(shape).transpose(1, 2)
 
         if image_mask is None:
@@ -199,6 +211,11 @@ class _ExtensionBackend(_Backend):
             out = torch.cat((out_img, out_txt), dim=1)
 
         out = block.proj["o"](out.to(dtype))
+        if fused:
+            x = torch.addcmul(x, out.to(x.dtype), gate_a.to(x.dtype))
+            y = kernels.modulated_rms_norm(block.norm2, x, scale_f, shift_f, transformer.EPS).to(dtype)
+            out = kernels.linear_situ(block.proj["ffn_down"], block.proj["ffn_up_gate"](y), transformer.situ)
+            return torch.addcmul(x, out.to(x.dtype), gate_f.to(x.dtype))
         x = x + (out * gate_a).to(x.dtype)
         y = (block.norm2(x) * (1 + scale_f) + shift_f).to(dtype)
         hidden, gate = block.proj["ffn_up_gate"](y).chunk(2, -1)
@@ -657,6 +674,11 @@ def _hook_dit_forward(dit, remove: bool):
         if negpip_mask is not None:
             while negpip_mask.ndim > 3:
                 negpip_mask = negpip_mask.squeeze(1)
+            # a sign-only mask of all +1 (positive weights only, already applied by the text encoder) leaves the
+            # values as they are: keep the blocks' own forward, which may be fused
+            if negpip_mask.size(-1) == 1 and bool((negpip_mask == 1).all()):
+                negpip_mask = None
+        if negpip_mask is not None:
             transformer_options = {**(transformer_options or {}), "negpip_mask": negpip_mask}
 
         if transformer_options is None:
