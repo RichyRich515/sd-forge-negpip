@@ -332,9 +332,10 @@ def any_weighted(model, p) -> bool:
         *(getattr(p, "hr_negative_prompts", None) or []),
     ]
     for line in lines:
-        layout = _layout(backend, line.strip()) if backend is not None else None
-        if layout is not None:
-            texts = []
+        found = _layout(backend, line.strip()) if backend is not None else None
+        if found is not None:
+            layout, remainder = found
+            texts = [remainder]
             for start, end in _caption_spans(layout):
                 try:
                     texts.append(json.loads(f'"{layout[start:end]}"'))
@@ -447,18 +448,23 @@ def _hook_get_learned_conditioning(model, remove: bool):
     model.get_learned_conditioning = negpip_learned_conditioning
 
 
-def _layout(backend: _Backend, text: str) -> Optional[str]:
+def _layout(backend: _Backend, text: str) -> Optional[tuple[str, str]]:
     """
-    the text of a MOSS-Image layout prompt (one JSON object, with the braces
-    restored as the extension does), or None when the line is not a layout
+    (layout, remainder) of a MOSS-Image layout prompt: the leading JSON object
+    (with the braces restored as the extension does) and whatever follows it,
+    e.g. the Extra text Forge Neo's JSON Builder appends; None when the line
+    does not start with a layout
     """
     text = backend.restore_layout(text)
     if not text.startswith("{"):
         return None
     try:
-        return text if isinstance(json.loads(text), dict) else None
+        layout, end = json.JSONDecoder().raw_decode(text)
     except ValueError:
         return None
+    if not isinstance(layout, dict):
+        return None
+    return text[:end], text[end:]
 
 
 def _is_layout(backend: _Backend, text: str) -> bool:
@@ -544,10 +550,15 @@ def _parse_layout(layout: str, emphasis_name: str) -> list[tuple[str, float]]:
 
 
 def _parse_line(backend: _Backend, line: str, emphasis_name: str) -> list[tuple[str, float]]:
-    layout = _layout(backend, line.strip())
-    if layout is not None:
-        return _parse_layout(layout, emphasis_name)
-    return _parse_attention(line, emphasis_name)
+    found = _layout(backend, line.strip())
+    if found is None:
+        return _parse_attention(line, emphasis_name)
+    layout, remainder = found
+    parsed = _parse_layout(layout, emphasis_name)
+    if remainder.strip():
+        # plain prompt text after the layout: weights apply as usual
+        parsed.extend(_parse_attention(remainder, emphasis_name))
+    return parsed
 
 
 def _tokenize_line_negpip(backend: _Backend, line: str, emphasis_name: str) -> tuple[list[int], list[float]]:
