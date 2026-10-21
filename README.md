@@ -62,7 +62,7 @@ MOSS-Image comes to Forge Neo in two ways: the [moss-image-forge-neo](https://gi
 - `BREAK` is a plain word for MOSS-Image; while NegPiP is active it stays a plain word
 - The negative-prompt block skipping keeps working, both the extension's (`[MOSS-Image] Blocks skipped in the negative-prompt pass`) and Forge Neo's Skip Layer Guidance
 
-The extension path was verified with the MOSS-Image SFT model (`moss_image_sft_int8_convrot`) on Forge Neo 2.30 with moss-image-forge-neo 0.1.1 (and offline against 0.1.2). The Forge Neo path was verified offline against the #1564 branch (real text engine and DiT code, CPU), not yet with a generation. If neither implementation is recognized or its internals change, NegPiP stays off for MOSS-Image and prints `NegPiP Disabled (MOSS-Image: ...)` to the console; the model keeps working.
+Both paths were verified with the MOSS-Image SFT model (`moss_image_sft_int8_convrot`): the extension path on Forge Neo 2.30 with moss-image-forge-neo 0.1.1 (and offline against 0.1.2), the Forge Neo path on the #1564 branch as of 2026-10-22 (with Skip Layer Guidance on), with matching results. If neither implementation is recognized or its internals change, NegPiP stays off for MOSS-Image and prints `NegPiP Disabled (MOSS-Image: ...)` to the console; the model keeps working.
 
 ## Examples
 
